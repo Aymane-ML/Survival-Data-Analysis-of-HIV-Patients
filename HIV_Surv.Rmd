@@ -1,0 +1,491 @@
+---
+title: "Surviva Data Analysis of HIV Patients"
+author: "Aymane Mimoun"
+date: "2024-03-20"
+output:
+  rmdformats::material:
+    fig_width: 10
+    fig_height: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Data Presentation 
+## Packages Installation
+```{r}
+library(survival)
+library(survminer)
+library(ggplot2)
+library(GGally)
+library(caret)
+library(riskRegression)
+library(pec)
+library(splines)
+library(RColorBrewer)
+library(survivalROC)
+library(randomForestSRC)
+library(dplyr)
+```
+
+## Data Extraction
+```{r}
+df <- read.csv("hiv.csv")
+head(df)
+```
+
+```{r}
+str(df)
+```
+
+# Exploratory Data Analysis
+
+## Data cleaning
+```{r}
+df$treatment <- as.factor(df$treatment)
+df$sex <- as.factor(df$sex)
+df$prev_infection<-as.factor(df$prev_infection)
+df$azt <- as.factor(df$azt)
+str(df)
+```
+
+```{r}
+cat('Nombre de données manquantes : ', sum(is.na(df)), '\n')
+
+cat('Nombre de doublons : ', sum(duplicated(df)))
+```
+## 3)
+CD4 Summary : 
+```{r}
+df$cd4_cat <- cut(df$cd4,
+                  breaks = c(0, 7, 15, 24.125),
+                  labels = c("Low", "Medium", "High"),
+                  right = TRUE)
+summary(df$cd4)
+```
+
+```{r}
+histogram_plot = ggplot(df, aes(x = cd4)) +
+  geom_histogram(fill = "blue", color = "black", alpha = 0.7) +
+  labs(title = "Histogramme de la variable CD4", x = "CD4", y = "Fréquence") +
+  theme_minimal()
+
+density_plot = ggplot(df, aes(x = cd4)) +
+  geom_density(fill = "darkgreen", alpha = 0.5) +
+  labs(title = "Densité de la variable CD4", x = "CD4", y = "Densité") +
+  theme_minimal()
+
+histogram_plot
+density_plot
+```
+
+
+```{r}
+ggsave("histogramme_cd4.png", plot = histogram_plot, width = 6, height = 4)
+
+ggsave("densite_cd4.png", plot = density_plot, width = 6, height = 4)
+```
+
+Sex distribution:
+```{r}
+histo_sex_plot = ggplot(df, aes(x = sex)) +
+  geom_bar(fill = "lightblue", color = "black") +
+  labs(title = "Distribution du Sexe", x = "Sexe", y = "Nombre d'individus") +
+  theme_minimal()
+
+cat("Résumé numérique de la variable sex : \n")
+print(table(df$sex))
+histo_sex_plot
+```
+```{r}
+ggsave("histogram_sex.png", plot = histo_sex_plot, width = 6, height = 4)
+```
+
+We notice that the vast majority of patients are men.
+```{r}
+cd4_azt_plot = ggplot(df, aes(x = azt, y = cd4, fill = azt)) +
+  geom_boxplot() +
+  labs(title = "Boxplot de CD4 par Sexe", x = "AZT", y = "CD4") +
+  theme_minimal()
+
+cd4_azt_plot
+```
+
+```{r}
+ggsave("boxplot_azt_cd4.png", plot = cd4_azt_plot, width = 6, height = 4)
+```
+
+
+```{r}
+ggplot(df, aes(x = azt, y = cd4, fill = azt)) +
+  geom_boxplot() +
+  labs(title = "Boxplot de CD4 par Traitement", x = "Traitement", y = "CD4") +
+  theme_minimal()
+```
+
+```{r}
+ggpairs(df[, sapply(df, is.numeric)], 
+        title = "Matrice de Corrélation des Variables Continues")
+```
+
+```{r}
+boxplot_infection = ggplot(df, aes(x = interaction(prev_infection, azt), y = cd4, fill = azt)) +
+  geom_boxplot() +
+  labs(title = "Boxplot de CD4 par Sexe et Infections", x = "Sexe et Inféctions", y = "CD4") +
+  theme_minimal()
+
+boxplot_infection
+```
+
+```{r}
+ggsave("boxplot_infection.png", plot = boxplot_infection, width = 6, height = 4)
+```
+
+
+```{r}
+surv_plot_treatment <- ggsurvplot (
+  survfit(Surv(time, death) ~ treatment, data = df),
+  data = df,
+  pval = TRUE,
+  conf.int = TRUE,
+  title = "Courbe de Survie par Traitement",
+  xlab = " Temps (mois)",
+  ylab = "Probabilité de survie",
+  legend.title = "Type de Traitement",
+  palette = RColorBrewer::brewer.pal(3, "Set1")
+)
+
+surv_plot_treatment
+
+logrank_treatment <- survdiff(Surv(time, death) ~ treatment, data = df)
+logrank_treatment
+```
+```{r}
+ggsave("surv_plot_treatment.png", plot = surv_plot_treatment$plot, width = 8, height = 6, dpi = 300)
+```
+
+```{r}
+fit_sex <- survfit(Surv(time, death) ~ sex, data = df)
+
+survplot_sex = ggsurvplot (
+  fit_sex,
+  data = df,
+  pval = TRUE,
+  conf.int = TRUE,
+  title = "Courbe de Survie par Genre",
+  xlab = " Temps (mois)",
+  ylab = "Probabilité de survie",
+  legend.title = "Genre",
+  palette = "viridis"
+)
+survplot_sex
+logrank_sex <- survdiff(Surv(time, death) ~ sex, data = df)
+logrank_sex
+```
+```{r}
+ggsave("survplot_sex.png", plot = survplot_sex$plot, width = 8, height = 6, dpi = 300)
+```
+
+```{r}
+fit_cd4 <- survfit(Surv(time, death) ~ cd4_cat, data = df)
+
+surv_plot_cd4 <- ggsurvplot (
+  fit_cd4,
+  data = df,
+  pval = TRUE,
+  conf.int = TRUE,
+  title = "Survival Curve based on CD4 Cell Count",
+  xlab = " Times (months)",
+  ylab = "Survival probability",
+  legend.title = "CD4 Cell count. \n", 
+  palette = c("#E7B800", "#2E9FDF", "darkgreen")  
+)
+surv_plot_cd4
+```
+```{r}
+ggsave("surv_plot_cd4.png", plot = surv_plot_cd4$plot, width = 8, height = 6, dpi = 300)
+```
+
+
+```{r}
+fit_infection <- survfit(Surv(time, death) ~ prev_infection, data = df)
+
+surv_plot_infection <- ggsurvplot (
+  fit_infection,
+  data = df,
+  pval = TRUE,
+  conf.int = TRUE,
+  title = "Courbe de Survie selon les antécédents d'infection (SIDA)",
+  xlab = " Temps (mois)",
+  ylab = "Probabilité de survie",
+  legend.title = "Antécédents d'Infection \n", 
+  palette = c("#E7B800", "#2E9FDF")  
+)
+
+logrank_infection <- survdiff(Surv(time, death) ~ prev_infection, data = df)
+logrank_infection
+```
+```{r}
+ggsave("surv_plot_infection.png", plot = surv_plot_infection$plot, width = 8, height = 6, dpi = 300)
+
+```
+
+```{r}
+surv_plot_azt <- ggsurvplot (
+  survfit(Surv(time, death) ~ azt, data = df),
+  data = df,
+  pval = TRUE,
+  conf.int = TRUE,
+  title = "Courbe de Survie par Genre",
+  xlab = " Temps (mois)",
+  ylab = "Probabilité de survie",
+  legend.title = "Genre",
+  palette = RColorBrewer::brewer.pal(3, "Dark2")
+)
+surv_plot_azt
+logrank_azt <- survdiff(Surv(time, death) ~ treatment, data = df)
+logrank_azt
+```
+
+```{r}
+ggsave("surv_plot_azt.png", plot=surv_plot_azt$plot, width=8, height=6, dpi=300)
+```
+ 
+# B. Statistical modelling and analysis
+## 7)
+
+```{r}
+df <- df %>% select(-cd4_cat)
+```
+
+```{r}
+train <- createDataPartition(df$death, p = 0.7, list = FALSE)
+
+train_data <- df[train,]
+test_data <- df[-train,]
+
+cat("Distribution de la variable 'death' dans l'ensemble d'entraînement :\n")
+table(train_data$death)
+
+cat("\nDistribution de la variable 'death' dans l'ensemble de test :\n")
+table(test_data$death)
+```
+## 8)
+```{r}
+train_data$prev_infection <- relevel(train_data$prev_infection, ref = "AIDS")
+train_data$azt <- relevel(train_data$azt, ref = "failure")
+
+cox <- coxph(Surv(time, death) ~prev_infection + azt, data = train_data, x = TRUE)
+
+cox
+```
+
+```{r}
+cox_zph <- cox.zph(cox)
+
+print(cox_zph)
+ggcoxzph(cox_zph)
+```
+
+Cela signifie que les effets des covariables sur le risque de survie sont constants dans le temps. Cela valide l’utilisation d’un modèle de Cox avec ces covariables.
+
+## Modèle Généralisé
+```{r}
+train_data$azt <- factor(train_data$azt)
+train_data$prev_infection <- factor(train_data$prev_infection)
+
+cox_nl <- coxph(Surv(time, death) ~ prev_infection + azt + ns(cd4, df = 2), data = train_data)
+
+summary(cox_nl)
+```
+
+```{r}
+cox_zph_nl <- cox.zph(cox_nl)
+
+print(cox_zph_nl)
+ggcoxzph(cox_zph_nl)
+```
+
+```{r}
+anova(cox, cox_nl, test = "LRT")
+```
+## 10) 
+```{r}
+patient_1 <- data.frame(prev_infection = "noAIDS", azt = "failure") 
+patient_2 <- data.frame(prev_infection = "AIDS", azt = "intolerance")
+
+patient_1_nl <- data.frame(prev_infection = "noAIDS", azt = "failure", cd4 = 20) 
+patient_2_nl <- data.frame(prev_infection = "AIDS", azt = "intolerance", cd4 = 2)
+
+surv_patient_1_cox <- survfit(cox, newdata = patient_1)
+surv_patient_2_cox <- survfit(cox, newdata = patient_2)
+
+surv_patient_1_cox_nl <- survfit(cox_nl, newdata = patient_1_nl)
+surv_patient_2_cox_nl <- survfit(cox_nl, newdata = patient_2_nl)
+
+
+prob_18_months_patient_1 <- summary(surv_patient_1_cox, times = 18)$surv
+prob_18_months_patient_2 <- summary(surv_patient_2_cox, times = 18)$surv
+
+prob_18_months_patient_1_nl <- summary(surv_patient_1_cox_nl, times = 18)$surv
+prob_18_months_patient_2_nl <- summary(surv_patient_2_cox_nl, times = 18)$surv
+
+cat("The probability that these two patients will survive beyond 18 months with the Linear Model : \n")
+cat("First Patient : - ", prob_18_months_patient_1, "\n")
+cat("Second Patient : -", prob_18_months_patient_2, "\n")
+cat("\nThe probability that these two patients will survive beyond 18 months with the Non linear Model : \n")
+cat("First Patient : - ", prob_18_months_patient_1_nl, "\n")
+cat("Second Patient : - ", prob_18_months_patient_2_nl, "\n")
+
+```
+## 11) 
+```{r}
+patient_1_12_months <- data.frame(prev_infection = "noAIDS", azt = "failure", cd4 = 20)
+patient_2_12_months <- data.frame(prev_infection = "AIDS", azt = "intolerance", cd4 = 2)
+
+surv_patient_1_12_months <- survfit(cox_nl, newdata = patient_1_12_months)
+surv_patient_2_12_months <- survfit(cox_nl, newdata = patient_2_12_months)
+
+prob_patient_1_12_months <- summary(surv_patient_1_12_months, times = 12)$surv
+prob_patient_2_12_months <- summary(surv_patient_2_12_months, times = 12)$surv
+
+prob_patient_1_18_months <- summary(surv_patient_1_12_months, times = 18)$surv
+prob_patient_2_18_months <- summary(surv_patient_2_12_months, times = 18)$surv
+
+prob_cond_patient_1 <- prob_patient_1_18_months / prob_patient_1_12_months
+prob_cond_patient_2 <- prob_patient_2_18_months / prob_patient_2_12_months
+
+cat("First Patient - Conditional probability of survival between 12 and 18 months : ", prob_cond_patient_1, "\n")
+cat("Individu âgé - Probabilité conditionnelle de survie entre 12 et 18 mois : ", prob_cond_patient_2, "\n")
+```
+## 12)
+```{r}
+rf <- rfsrc(Surv(time, death) ~ prev_infection + azt + cd4, 
+            data = train_data, 
+            ntree = 200)
+
+rf_opti = rfsrc(
+  Surv(time, death) ~ prev_infection + azt + cd4,
+  data = train_data,
+  ntree = 200,
+  mtry = 1,
+  nodesize = 5
+)
+```
+
+```{r}
+cox_pred <- predict(cox_nl, newdata = test_data, type = "risk")
+rf_pred <- predict(rf, newdata = test_data, type = "response")
+rf_opti_pred <- predict(rf_opti, newdata = test_data, type = "response")
+
+rf_pred_probs <- rf_pred$predicted
+
+rf_pred_opti_probs = rf_opti_pred$predicted
+```
+
+## 13) 
+```{r}
+cox_roc <- survivalROC(
+  Stime = test_data$time, 
+  status = test_data$death, 
+  marker = cox_pred,
+  predict.time = 18,
+  method = "KM"
+)
+
+cox_auc <- cox_roc$AUC
+
+rf_roc <- survivalROC(
+  Stime = test_data$time,
+  status = test_data$death,
+  marker = rf_pred_probs,
+  predict.time = 18,
+  method = "KM"
+)
+
+rf_auc <- rf_roc$AUC
+
+rf_opti_roc <- survivalROC(
+  Stime = test_data$time,
+  status = test_data$death,
+  marker = rf_pred_opti_probs,
+  predict.time = 18,
+  method = "KM"
+)
+
+rf_opti_auc <- rf_opti_roc$AUC
+
+roc_data_cox <- data.frame(
+  FPR = cox_roc$FP,
+  TPR = cox_roc$TP,
+  Model = "Cox",
+  AUC = round(cox_roc$AUC, 3)
+)
+
+roc_data_rf <- data.frame(
+  FPR = rf_roc$FP,
+  TPR = rf_roc$TP,
+  Model = "RF",
+  AUC = round(rf_roc$AUC, 3)
+)
+
+roc_data_rf_opti <- data.frame(
+  FPR = rf_opti_roc$FP,
+  TPR = rf_opti_roc$TP,
+  Model = "RF Optimisé",
+  AUC = round(rf_opti_roc$AUC, 3)
+)
+
+roc_data <- rbind(roc_data_cox, roc_data_rf, roc_data_rf_opti)
+
+roc_curve = ggplot(roc_data, aes(x = FPR, y = TPR, color = Model)) +
+  geom_line(size = 1) + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  labs(
+    title = paste("ROC Curves (AUC)"),
+    x = "False Positive Rate (FPR)",
+    y = "True Positive Rate (TPR)",
+    subtitle = paste("Cox AUC =", cox_auc, "\nRF AUC =", rf_auc, "\nRF Optimized, AUC =", rf_opti_auc)
+  ) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+ggsave("roc_curve.png", plot=roc_curve, width=8, height=6, dpi=300)
+```
+
+
+```{r}
+times <- seq(0, max(test_data$time), by = 5)
+
+brier_score <- Score(
+  object = list("Cox" = cox),
+  formula = Surv(time, death) ~ 1,
+  data = test_data,
+  times = times,
+  metrics = "Brier"
+)
+```
+
+```{r}
+brier_times <- brier_score$times
+brier_scores <- brier_score$Brier$score
+
+str(brier_score$times)
+str(brier_score$Brier$score)
+```
+```{r}
+embedded <- function(brier_results) {
+  times <- brier_results$times
+  brier_scores <- brier_results$Brier$score
+  
+  intervals <- diff(times)
+  weights <- c(intervals, 0) / sum(intervals)
+  
+  # Calculer le score intégré
+  embedded_score <- sum(brier_scores * weights, na.rm = TRUE)
+  return(embedded_score)
+}
+
+embedded_score <- embedded(brier_score)
+cat("Embedded Score: ", embedded_score, "\n")
+```
