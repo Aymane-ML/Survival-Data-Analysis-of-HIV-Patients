@@ -4,8 +4,8 @@ This project presents a survival analysis of HIV patient data using R. It was co
 
 ## 📁 Project Files
 
-- **Aymane_Mimoun_project.Rmd**: the main RMarkdown file containing the analysis code and explanations.
-- **Aymane_Mimoun_project.html**: rendered HTML report generated from the RMarkdown.
+- **HIV_Surv.Rmd**: the main RMarkdown file containing the analysis code and explanations.
+- **HIV_Surv.html**: rendered HTML report generated from the RMarkdown.
 - **hiv.csv**: the dataset used in the analysis (de-identified).
 
 ## 📊 Objectives
